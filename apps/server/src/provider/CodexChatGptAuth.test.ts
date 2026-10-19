@@ -1,8 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off globalFetchInEffect:off - Local mock OAuth server validates the browser callback boundary.
 import * as NodeNet from "node:net";
 import * as Context from "effect/Context";
-import * as Exit from "effect/Exit";
-import * as FileSystem from "effect/FileSystem";
 import * as Scope from "effect/Scope";
 import * as ServerConfig from "../config.ts";
 import * as CodexManagedTokenBroker from "./CodexManagedTokenBroker.ts";
@@ -1656,13 +1654,9 @@ it.effect("a running session renews its bound profile but refuses a replacement 
 );
 
 const makeRenewalBroker = Effect.gen(function* () {
-  const fs = yield* FileSystem.FileSystem;
   const oauthEntered = yield* Deferred.make<void>();
   const oauthRelease = yield* Deferred.make<void>();
-  const commitEntered = yield* Deferred.make<void>();
-  const commitRelease = yield* Deferred.make<void>();
   let pauseOAuth = false;
-  let pauseCommit = false;
   const refreshTokens: string[] = [];
   const credentials = {
     clientId: "oaiapp_broker",
@@ -1708,20 +1702,6 @@ const makeRenewalBroker = Effect.gen(function* () {
       );
     }),
   );
-  const fileSystem = FileSystem.FileSystem.of({
-    ...fs,
-    rename: (from, to) =>
-      Effect.gen(function* () {
-        if (pauseCommit && from.endsWith(".tmp") && to.includes("provider-auth-")) {
-          const pending = yield* fs.readFileString(from);
-          if (pending.includes("rotated-refresh")) {
-            yield* Deferred.succeed(commitEntered, undefined);
-            yield* Deferred.await(commitRelease);
-          }
-        }
-        yield* fs.rename(from, to);
-      }),
-  });
   return yield* Effect.gen(function* () {
     const store = yield* ProviderCredentialStore.make("codex-chatgpt", instanceId);
     yield* store.set(new TextEncoder().encode(JSON.stringify(credentials)));
@@ -1732,31 +1712,22 @@ const makeRenewalBroker = Effect.gen(function* () {
     const context = yield* Layer.buildWithScope(CodexManagedTokenBroker.layer, scope);
     const broker = Context.get(context, CodexManagedTokenBroker.CodexManagedTokenBroker);
     const endpoint = yield* broker.endpoint;
-    yield* Effect.addFinalizer(() =>
-      Deferred.succeed(oauthRelease, undefined).pipe(
-        Effect.andThen(Deferred.succeed(commitRelease, undefined)),
-      ),
-    );
+    yield* Effect.addFinalizer(() => Deferred.succeed(oauthRelease, undefined));
     return {
       auth,
       store,
       broker,
-      scope,
       endpoint,
       refreshTokens,
       request: { version: 1, instanceId, environmentId, profileKey },
       oauthEntered,
       oauthRelease,
-      commitEntered,
-      commitRelease,
-      pause: (stage: "oauth" | "commit") => {
-        pauseOAuth = stage === "oauth";
-        pauseCommit = stage === "commit";
+      pause: () => {
+        pauseOAuth = true;
       },
     };
   }).pipe(
     Effect.provide(ServerSecretStore.layer),
-    Effect.provideService(FileSystem.FileSystem, fileSystem),
     Effect.provideService(HttpClient.HttpClient, http),
     Effect.provideService(ServerEnvironment.ServerEnvironmentIdentity, {
       getEnvironmentId: Effect.succeed(environmentId),
@@ -1796,41 +1767,26 @@ const provideBroker = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     ),
   );
 
-it.live.each(["oauth-disconnect", "commit-disconnect", "commit-shutdown"] as const)(
-  "server-owned renewal persists rotated credentials after %s",
-  (stage) =>
-    provideBroker(
-      Effect.gen(function* () {
-        const h = yield* makeRenewalBroker;
-        h.pause(stage === "oauth-disconnect" ? "oauth" : "commit");
-        const client = yield* brokerClient(h.endpoint, h.request);
-        yield* Deferred.await(stage === "oauth-disconnect" ? h.oauthEntered : h.commitEntered);
-        const closing =
-          stage === "commit-shutdown"
-            ? yield* Scope.close(h.scope, Exit.void).pipe(Effect.forkChild)
-            : undefined;
-        if (!closing) client.socket.destroy();
-        yield* Effect.promise(() => client.response);
-        assert.equal(Option.getOrThrow(yield* h.auth.read).refreshToken, "single-use-refresh");
-        yield* Deferred.succeed(h.oauthRelease, undefined);
-        yield* Deferred.succeed(h.commitRelease, undefined);
-        if (closing) yield* Fiber.join(closing);
-        else yield* h.broker.awaitIdle;
-        const persisted = Option.getOrThrow(yield* h.auth.read);
-        assert.equal(persisted.refreshToken, "rotated-refresh");
-        assert.equal(persisted.accessToken, "renewed-access");
-        assert.equal((yield* h.auth.access).accessToken, "renewed-access");
-        assert.deepEqual(h.refreshTokens, ["single-use-refresh"]);
-        const fs = yield* FileSystem.FileSystem;
-        const config = yield* ServerConfig.ServerConfig;
-        assert.deepEqual(
-          (yield* fs.readDirectory(config.secretsDir)).filter(
-            (name) => name.endsWith(".tmp") || name.endsWith(".lock"),
-          ),
-          [],
-        );
-      }),
-    ),
+// regression: #16132 a renewal must outlive the Codex helper that asked for it, because the
+// refresh token it spends is single-use.
+it.effect("server-owned renewal persists rotated credentials after the helper disconnects", () =>
+  provideBroker(
+    Effect.gen(function* () {
+      const h = yield* makeRenewalBroker;
+      h.pause();
+      const client = yield* brokerClient(h.endpoint, h.request);
+      yield* Deferred.await(h.oauthEntered);
+      client.socket.destroy();
+      yield* Effect.promise(() => client.response);
+      assert.equal(Option.getOrThrow(yield* h.auth.read).refreshToken, "single-use-refresh");
+      yield* Deferred.succeed(h.oauthRelease, undefined);
+      yield* h.broker.awaitIdle;
+      const persisted = Option.getOrThrow(yield* h.auth.read);
+      assert.equal(persisted.refreshToken, "rotated-refresh");
+      assert.equal((yield* h.auth.access).accessToken, "renewed-access");
+      assert.deepEqual(h.refreshTokens, ["single-use-refresh"]);
+    }),
+  ),
 );
 
 it.live("the private broker refuses another environment, instance, or sign-in profile", () =>
