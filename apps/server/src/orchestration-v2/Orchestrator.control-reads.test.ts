@@ -159,6 +159,24 @@ it.effect(
         "pending",
       );
       assert.equal(projection.messages.at(-1)?.text, feedback);
+      const feedbackMessageId = MessageId.make("approval-feedback:child");
+      assert.ok(
+        projection.visibleTurnItems.some(
+          ({ item }) =>
+            item.type === "user_message" &&
+            item.messageId === feedbackMessageId &&
+            item.text === feedback,
+        ),
+      );
+      const history = yield* projections.getTimelinePage(threadId, { limit: 20, view: "messages" });
+      assert.ok(
+        history.items.some(
+          ({ item }) =>
+            item.type === "user_message" &&
+            item.messageId === feedbackMessageId &&
+            item.text === feedback,
+        ),
+      );
       assert.equal(projection.runs.length, 0);
       assert.deepEqual(
         (yield* outbox.listByCommandId(commandId)).map((effect) => effect.request),
