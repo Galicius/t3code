@@ -5850,7 +5850,6 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         FROM (
           SELECT thread_id, run_id, COUNT(*) AS item_count
           FROM orchestration_v2_projection_turn_items
-            INDEXED BY orchestration_v2_projection_turn_items_thread_run_idx
           WHERE thread_id IN ${sql.in(threadIds)}
           GROUP BY thread_id, run_id
         ) counts
