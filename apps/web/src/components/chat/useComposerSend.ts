@@ -997,31 +997,30 @@ export function useComposerSend(input: ComposerSendInput) {
           sendInFlightRef.current = false;
           return;
         }
-        try {
-          if (
-            changedBeforeDecline ||
-            approvalResponding ||
-            currentRouteThreadKeyRef.current !== routeThreadKey
-          )
-            return;
-          const sent = await sendApprovalFeedback(
-            approvalFeedbackTarget,
-            messageTextForSend,
-            onRespondToApprovalStable,
-          );
-          if (
-            sent &&
-            !draftChangedSinceSend() &&
-            currentRouteThreadKeyRef.current === routeThreadKey &&
-            useComposerDraftStore.getState().getComposerDraft(composerDraftTarget) ===
-              draftBeforeDecline
-          ) {
-            promptRef.current = "";
-            clearComposerDraftContent(composerDraftTarget);
-            composerRef.current?.resetCursorState();
-          }
-        } finally {
+        if (
+          changedBeforeDecline ||
+          approvalResponding ||
+          currentRouteThreadKeyRef.current !== routeThreadKey
+        ) {
           sendInFlightRef.current = false;
+          return;
+        }
+        const sent = await sendApprovalFeedback(
+          approvalFeedbackTarget,
+          messageTextForSend,
+          onRespondToApprovalStable,
+        ).catch(() => false);
+        sendInFlightRef.current = false;
+        if (
+          sent &&
+          !draftChangedSinceSend() &&
+          currentRouteThreadKeyRef.current === routeThreadKey &&
+          useComposerDraftStore.getState().getComposerDraft(composerDraftTarget) ===
+            draftBeforeDecline
+        ) {
+          promptRef.current = "";
+          clearComposerDraftContent(composerDraftTarget);
+          composerRef.current?.resetCursorState();
         }
         return;
       }
