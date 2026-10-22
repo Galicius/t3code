@@ -1431,5 +1431,11 @@ export function resolvePullRequestDetailChecks(
     detail.observedAt !== undefined && checks.observedAt !== undefined
       ? checks.observedAt >= detail.observedAt
       : checksAreNewer;
-  return newer ? { ...detail, state: checks.state, checks: checks.checks } : detail;
+  return newer
+    ? {
+        ...detail,
+        state: detail.state === "merged" ? "merged" : checks.state,
+        checks: checks.checks,
+      }
+    : detail;
 }

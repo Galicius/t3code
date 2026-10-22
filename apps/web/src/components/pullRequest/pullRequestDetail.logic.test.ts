@@ -1291,6 +1291,14 @@ describe("cached pull request detail", () => {
     expect(resolvePullRequestDetailChecks(refreshed, checks, true)).toBe(refreshed);
   });
 
+  it("keeps merged details settled while applying newer checks", () => {
+    const merged = detail({ state: "merged", observedAt: 1_000 });
+    const checks = [{ name: "build", status: "success" as const, url: null, description: null }];
+    expect(
+      resolvePullRequestDetailChecks(merged, { state: "open", observedAt: 2_000, checks }, true),
+    ).toEqual({ ...merged, checks });
+  });
+
   const makeStorage = () => {
     const held = new Map<string, string>();
     return {
