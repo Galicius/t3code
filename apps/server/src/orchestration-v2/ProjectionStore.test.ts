@@ -2393,7 +2393,7 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
       ))
         .map((row) => row.detail)
         .filter((detail) => detail.startsWith("SEARCH stop_request "));
-      assert.isNotEmpty(stopRequestLookups);
+      assert.lengthOf(stopRequestLookups, 2);
       for (const lookup of stopRequestLookups) {
         assert.include(lookup, "orchestration_v2_projection_turn_items_stop_request_idx");
       }
