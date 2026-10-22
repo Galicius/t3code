@@ -1267,6 +1267,30 @@ describe("cached pull request detail", () => {
     expect(resolvePullRequestDetailChecks(null, { state: "closed", checks }, true)).toBeNull();
   });
 
+  it("keeps newer checks when an older cached detail arrives later", () => {
+    const pending: PullRequestCheck = {
+      name: "build",
+      status: "pending",
+      url: null,
+      description: null,
+    };
+    const cached = detail({ observedAt: 1_000, checks: [pending] });
+    const checks = {
+      state: "open" as const,
+      checks: [{ ...pending, status: "success" as const }],
+      observedAt: 2_000,
+    };
+    const resolved = resolvePullRequestDetailChecks(cached, checks, false);
+    expect(resolved?.checks).toEqual(checks.checks);
+    expect(resolved?.observedAt).toBe(1_000);
+    expect(
+      resolvePullRequestDetailChecks(cached, { state: checks.state, checks: checks.checks }, true)
+        ?.checks,
+    ).toEqual(checks.checks);
+    const refreshed = detail({ observedAt: 3_000, checks: [pending] });
+    expect(resolvePullRequestDetailChecks(refreshed, checks, true)).toBe(refreshed);
+  });
+
   const makeStorage = () => {
     const held = new Map<string, string>();
     return {

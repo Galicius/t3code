@@ -1426,5 +1426,10 @@ export function resolvePullRequestDetailChecks(
   checks: PullRequestChecks | null,
   checksAreNewer: boolean,
 ): PullRequestDetail | null {
-  return detail !== null && checks !== null && checksAreNewer ? { ...detail, ...checks } : detail;
+  if (detail === null || checks === null) return detail;
+  const newer =
+    detail.observedAt !== undefined && checks.observedAt !== undefined
+      ? checks.observedAt >= detail.observedAt
+      : checksAreNewer;
+  return newer ? { ...detail, state: checks.state, checks: checks.checks } : detail;
 }
