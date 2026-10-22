@@ -10,6 +10,7 @@ import {
   type PullRequestActor,
   type PullRequestBaseComparison,
   type PullRequestCheck,
+  type PullRequestChecks,
   type PullRequestChecksState as ContractPullRequestChecksState,
   type PullRequestComment,
   type PullRequestCommit,
@@ -1418,4 +1419,12 @@ export function resolveDisplayedPullRequestDetail(input: {
   } catch {
     return null;
   }
+}
+
+export function resolvePullRequestDetailChecks(
+  detail: PullRequestDetail | null,
+  checks: PullRequestChecks | null,
+  checksAreNewer: boolean,
+): PullRequestDetail | null {
+  return detail !== null && checks !== null && checksAreNewer ? { ...detail, ...checks } : detail;
 }

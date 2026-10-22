@@ -46,6 +46,7 @@ import {
   checkoutFailureDescription,
   readPullRequestDetailSnapshot,
   resolveDisplayedPullRequestDetail,
+  resolvePullRequestDetailChecks,
   resolvePullRequestReferenceHost,
   resolvePullRequestPrimaryControl,
   allowsSinglePullRequestMerge,
@@ -1244,6 +1245,27 @@ describe("cached pull request detail", () => {
       mergeCapabilities: { merge: true, squash: true, rebase: true },
       ...overrides,
     }) as PullRequestDetail;
+
+  it("uses fresh checks for detail counts without replacing other PR fields", () => {
+    const pending = (name: string): PullRequestCheck => ({
+      name,
+      status: "pending",
+      url: null,
+      description: null,
+    });
+    const original = detail({ checks: [pending("build"), pending("test")] });
+    const checks = [pending("build"), { ...pending("test"), status: "success" as const }];
+    expect(resolvePullRequestDetailChecks(original, { state: "closed", checks }, true)).toEqual({
+      ...original,
+      state: "closed",
+      checks,
+    });
+    expect(resolvePullRequestDetailChecks(original, { state: "closed", checks }, false)).toBe(
+      original,
+    );
+    expect(resolvePullRequestDetailChecks(original, null, true)).toBe(original);
+    expect(resolvePullRequestDetailChecks(null, { state: "closed", checks }, true)).toBeNull();
+  });
 
   const makeStorage = () => {
     const held = new Map<string, string>();
