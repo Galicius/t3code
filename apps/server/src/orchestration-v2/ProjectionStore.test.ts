@@ -2374,6 +2374,55 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
     }),
   );
 
+  it.effect("uses indexed shell reads and batches item counts", () =>
+    Effect.gen(function* () {
+      const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
+      const sql = yield* SqlClient.SqlClient;
+      const { projectId, activeThreadId, forkThreadId } =
+        yield* assertProjectScopedShells("sql-shell-item-counts");
+      const { statements, tracer } = traceSqlStatements();
+
+      const snapshot = yield* projectionStore
+        .getShellSnapshot({ projectId, location: "active" })
+        .pipe(Effect.withTracer(tracer));
+      assert.sameMembers(
+        snapshot.threads.map((thread) => thread.id),
+        [activeThreadId, forkThreadId],
+      );
+
+      const threadQuery = statements.find((statement) =>
+        statement.includes("AS forked_from_run_source_thread_id"),
+      );
+      assert.isDefined(threadQuery);
+      assert.isFalse(threadQuery.includes("GROUP BY i.run_id"));
+      const threadPlan = (yield* sql.unsafe<{ readonly detail: string }>(
+        `EXPLAIN QUERY PLAN ${threadQuery}`,
+      )).map((row) => row.detail);
+      const stopRequestLookups = threadPlan.filter((detail) =>
+        detail.startsWith("SEARCH stop_request "),
+      );
+      assert.lengthOf(stopRequestLookups, 2);
+      for (const lookup of stopRequestLookups) {
+        assert.include(lookup, "orchestration_v2_projection_turn_items_stop_request_idx");
+      }
+
+      const countQuery = statements.find(
+        (statement) =>
+          statement.includes("COUNT(*) AS item_count") &&
+          statement.includes("AS runless_item_count"),
+      );
+      assert.isDefined(countQuery);
+      const plan = (yield* sql.unsafe<{ readonly detail: string }>(
+        `EXPLAIN QUERY PLAN ${countQuery}`,
+      )).map((row) => row.detail);
+      assert.isTrue(
+        plan.some((detail) =>
+          detail.includes("orchestration_v2_projection_turn_items_thread_run_idx"),
+        ),
+      );
+    }),
+  );
+
   it.effect("does not treat visited or marked-unread state as thread activity", () =>
     Effect.gen(function* () {
       const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
