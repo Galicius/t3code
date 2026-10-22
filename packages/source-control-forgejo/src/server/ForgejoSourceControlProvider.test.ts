@@ -139,6 +139,48 @@ it.effect.each([
   ),
 );
 
+it.effect.each([
+  [true, false],
+  [false, true],
+] as const)(
+  "reports a Forgejo merge whose branch deletion was refused by whether it merged (merged: %s)",
+  ([merged, fails]) => {
+    const refused = new ForgejoCli.ForgejoCliError({
+      command: "fj",
+      cwd: "/repo",
+      detail: "branch is protected",
+      httpStatus: 403,
+      reason: "forbidden",
+    });
+    return Effect.gen(function* () {
+      const provider = yield* ForgejoPullRequestProvider.make;
+      const exit = yield* Effect.exit(
+        provider.runAction({ ...requiredChecksInput, action: "merge", mergeMethod: "merge" }),
+      );
+      assert.strictEqual(exit._tag === "Failure", fails);
+    }).pipe(
+      Effect.provide(
+        Layer.mock(ForgejoCli.ForgejoCli)({
+          api: (input) => {
+            const respond = (response: unknown) =>
+              encodeJsonEffect(response).pipe(Effect.orDie, Effect.map(processOutput));
+            switch (input.path) {
+              case "repos/acme/web":
+                return respond({ full_name: "acme/web", default_delete_branch_after_merge: true });
+              case "repos/acme/web/pulls/7/merge":
+                return Effect.fail(refused);
+              case "repos/acme/web/pulls/7":
+                return respond({ ...requiredChecksPullRequest, merged });
+              default:
+                return Effect.die(`Unexpected Forgejo request: ${input.path}`);
+            }
+          },
+        }),
+      ),
+    );
+  },
+);
+
 // regression: #18775 a failed branch-protection read surfaces; only 403/404 are treated as no policy
 it.effect.each([
   ["rate limit", { reason: "rate-limit", httpStatus: 429 }, "rate-limited"],
