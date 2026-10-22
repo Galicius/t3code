@@ -91,6 +91,7 @@ import {
   modelShare,
   sortModelsByTokens,
   speedCostSegments,
+  timeBreakdownMetric,
   tokenTypeSegments,
 } from "./usageBreakdown";
 import {
@@ -669,6 +670,7 @@ function UsageOverview({
   const breakdownPeriods: readonly (DailyTotals | HourlyTotals)[] = (
     shownHourly ? merged.hourly : merged.daily
   ).toReversed();
+  const timeMetric = timeBreakdownMetric(metric);
   const breakdownModels =
     breakdown === "model" && metric === "tokens"
       ? sortModelsByTokens(merged.models)
@@ -1017,7 +1019,7 @@ function UsageOverview({
                     </th>
                   ))}
                   <th className="py-2 pl-4 text-right font-normal">Total</th>
-                  <th className="py-2 pl-4 text-right font-normal">Tokens</th>
+                  <th className="py-2 pl-4 text-right font-normal">{timeMetric.secondaryLabel}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1049,7 +1051,7 @@ function UsageOverview({
                             figureClass(loadingProviders.has(provider)),
                           )}
                         >
-                          {formatUsd(period.byProvider.get(provider)?.costUsd ?? 0)}
+                          {timeMetric.formatValue(period.byProvider.get(provider))}
                         </td>
                       ))}
                       <td
@@ -1058,7 +1060,7 @@ function UsageOverview({
                           figureClass(loadingPartial),
                         )}
                       >
-                        {formatUsd(period.costUsd)}
+                        {timeMetric.formatValue(period)}
                       </td>
                       <td
                         className={cn(
@@ -1066,7 +1068,7 @@ function UsageOverview({
                           figureClass(loadingPartial),
                         )}
                       >
-                        {formatTokens(period.totalTokens)}
+                        {timeMetric.formatSecondaryValue(period)}
                       </td>
                     </tr>
                   ))
